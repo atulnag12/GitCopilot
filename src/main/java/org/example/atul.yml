@@ -1,3 +1,7 @@
+    - name: Build a list of JAR names to keep
+      set_fact:
+        jars_to_keep: "{{ jar_list | map(attribute='name_of_the_jar') | join(' ') }}"
+
 - name: Delete JARs not in deployment list
       shell: |
         find "{{ ppath }}" -type f -name "*.jar" | while read -r jar; do
