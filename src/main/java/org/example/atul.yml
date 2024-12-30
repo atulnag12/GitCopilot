@@ -1,9 +1,9 @@
- tasks:
-    - name: Get base name without version and extension
+  tasks:
+    - name: Get base name of the jar file (without version and extension)
       set_fact:
         base_names: "{{ jar_list | map(attribute='name_of_the_jar') | map('regex_replace', '(^[a-zA-Z0-9-]+)-.*$', '\\1') | list }}"
-    
-    - name: Remove jar files matching base name pattern from each location
+
+    - name: Remove jar files matching the base name pattern from each location
       command: "rm -f {{ item.location_of_the_jar }}/{{ item.name_of_the_jar | regex_replace('\\.jar$', '') }}*.jar"
       loop: "{{ jar_list }}"
       when: jar_list | length > 0
@@ -14,3 +14,6 @@
       loop: "{{ jar_list }}"
       register: ls_output
 
+    - name: Show the list of files in the given path
+      debug:
+        var: ls_output.results | map(attribute='stdout_lines') | list
