@@ -1,21 +1,16 @@
-    - name: Build a list of JAR names to keep
+ tasks:
+    - name: Get base name without version and extension
       set_fact:
-        jars_to_keep: "{{ jar_list | map(attribute='name_of_the_jar') | join(' ') }}"
+        base_names: "{{ jar_list | map(attribute='name_of_the_jar') | map('regex_replace', '(^[a-zA-Z0-9-]+)-.*$', '\\1') | list }}"
+    
+    - name: Remove jar files matching base name pattern from each location
+      command: "rm -f {{ item.location_of_the_jar }}/{{ item.name_of_the_jar | regex_replace('\\.jar$', '') }}*.jar"
+      loop: "{{ jar_list }}"
+      when: jar_list | length > 0
+      become: yes  # Use become if elevated privileges are required for file removal
 
-- name: Delete JARs not in deployment list
-      shell: |
-        find "{{ ppath }}" -type f -name "*.jar" | while read -r jar; do
-          base_name=$(basename "$jar")
-          if ! echo "{{ jars_to_keep }}" | grep -q -w "$base_name"; then
-            echo "Deleting $jar"
-            rm -f "$jar"
-          fi
-        done
-      args:
-        executable: /bin/bash
-      register: delete_results
-
-    - name: Display deletion results
-      debug:
-        var: delete_results.stdout
+    - name: Verify removed files
+      command: "ls -l {{ item.location_of_the_jar }}"
+      loop: "{{ jar_list }}"
+      register: ls_output
 
