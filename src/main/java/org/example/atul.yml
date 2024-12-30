@@ -1,19 +1,11 @@
-  tasks:
-    - name: Get base name of the jar file (without version and extension)
-      set_fact:
-        base_names: "{{ jar_list | map(attribute='name_of_the_jar') | map('regex_replace', '(^[a-zA-Z0-9-]+)-.*$', '\\1') | list }}"
+- name: Find and remove .jar files for each item in jar_list using xargs
+  shell: |
+    find {{ pioneer_root }} -type f -name "{{ item.name_of_the_base }}*.jar" -print0 | xargs -0 rm -f
+  loop: "{{ jar_list }}"
+  become: yes  # Use become if elevated privileges are required for file removal
+  register: remove_results
+  ignore_errors: yes  # Optional, to prevent failure if no files are found
 
-    - name: Remove jar files matching the base name pattern from each location
-      command: "rm -f {{ item.location_of_the_jar }}/{{ item.name_of_the_jar | regex_replace('\\.jar$', '') }}*.jar"
-      loop: "{{ jar_list }}"
-      when: jar_list | length > 0
-      become: yes  # Use become if elevated privileges are required for file removal
-
-    - name: Verify removed files
-      command: "ls -l {{ item.location_of_the_jar }}"
-      loop: "{{ jar_list }}"
-      register: ls_output
-
-    - name: Show the list of files in the given path
+    - name: Debug the results of file removal
       debug:
-        var: ls_output.results | map(attribute='stdout_lines') | list
+        var: remove_results
