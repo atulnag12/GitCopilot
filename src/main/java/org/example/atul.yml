@@ -1,1 +1,17 @@
+- name: Delete JARs not in deployment list
+      shell: |
+        find "{{ ppath }}" -type f -name "*.jar" | while read -r jar; do
+          base_name=$(basename "$jar")
+          if ! echo "{{ jars_to_keep }}" | grep -q -w "$base_name"; then
+            echo "Deleting $jar"
+            rm -f "$jar"
+          fi
+        done
+      args:
+        executable: /bin/bash
+      register: delete_results
+
+    - name: Display deletion results
+      debug:
+        var: delete_results.stdout
 
