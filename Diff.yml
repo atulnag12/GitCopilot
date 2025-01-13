@@ -5,16 +5,40 @@
             <h2>The JAR files are identical.</h2>
           {% else %}
             <h2>The JAR files differ. Please see the details below:</h2>
-            <table border="1" cellpadding="5" cellspacing="0">
-              <tr>
-                <th style="background-color:#f2f2f2;">File Name</th>
-                <th style="background-color:#f2f2f2;">Differences</th>
-              </tr>
-              {% for line in diff_output.stdout.splitlines() %}
+            {% if diff_output.stdout | length > 0 %}
+              <table border="1" cellpadding="5" cellspacing="0">
                 <tr>
-                  <td>{{ line.split(':')[0] }}</td>
-                  <td style="color:red;">{{ line.split(':')[1] }}</td>
+                  <th style="background-color:#f2f2f2;">File Name</th>
+                  <th style="background-color:#f2f2f2;">Differences</th>
                 </tr>
-              {% endfor %}
-            </table>
+                {% for line in diff_output.stdout.splitlines() %}
+                  <tr>
+                    <td>{{ line.split(':')[0] }}</td>
+                    <td style="color:red;">{{ line.split(':')[1] }}</td>
+                  </tr>
+                {% endfor %}
+              </table>
+            {% else %}
+              <p>No differences found between the JAR files.</p>
+            {% endif %}
           {% endif %}
+
+    - name: Send email with comparison result to the recipient
+      mail:
+        host: "smtp.example.com"  # Replace with your SMTP server
+        port: 25
+        to: "{{ email_recipient }}"  # Single recipient
+        subject: "{{ email_subject }}"
+        body: |
+          <html>
+          <body>
+            <h3>Hi,</h3>
+            <p>Below is the result of the JAR content comparison:</p>
+            {{ comparison_message }}
+            <br/>
+            <br/>
+            <p>Regards,</p>
+            <p>Automation Team</p>
+          </body>
+          </html>
+        subtype: html
