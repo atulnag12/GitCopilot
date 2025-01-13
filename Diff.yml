@@ -1,80 +1,66 @@
 ---
-- name: Compare file contents in JARs entirely in memory
+- name: Compare contents of two JAR files on Unix using temporary storage
   hosts: localhost
   gather_facts: no
   vars:
-    unix_jar_path: "/path/to/unix/jar/sample.jar"  # Path to Unix JAR
-    jfrog_api_base_url: "https://jfrog.example.com/artifactory/api/storage/path/to/jar"  # Base URL for JFrog JAR
-    jfrog_username: "your_username"  # JFrog username
-    jfrog_password: "your_password"  # JFrog password
-    email_recipient: "recipient@example.com"  # Email recipient
-    email_subject: "Detailed JAR Comparison Report"  # Email subject
+    unix_jar_path_1: "/path/to/unix/jar/sample1.jar"  # Path to first JAR file on Unix
+    unix_jar_path_2: "/path/to/unix/jar/sample2.jar"  # Path to second JAR file on Unix
+    email_recipient: "recipient@example.com"  # Single email recipient
+    email_subject: "JAR Content Comparison Report"  # Email subject
+    temp_dir: "/tmp/jar_comparison"  # Temporary directory to store unzipped files
+
   tasks:
-    - name: List files in Unix JAR
-      shell: |
-        unzip -l "{{ unix_jar_path }}" | awk '{print $NF}' | tail -n +4 | head -n -2
-      register: unix_file_list_raw
+    - name: Create temporary directory for unzipped contents
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: '0755'
 
-    - name: Parse Unix JAR file list
+    - name: Unzip first JAR file into temporary directory
+      unarchive:
+        src: "{{ unix_jar_path_1 }}"
+        dest: "{{ temp_dir }}/jar1"
+        remote_src: yes
+
+    - name: Unzip second JAR file into temporary directory
+      unarchive:
+        src: "{{ unix_jar_path_2 }}"
+        dest: "{{ temp_dir }}/jar2"
+        remote_src: yes
+
+    - name: Compare contents of both JARs (files and their content)
+      command: diff -r {{ temp_dir }}/jar1 {{ temp_dir }}/jar2
+      register: diff_output
+      ignore_errors: yes
+
+    - name: Set result message based on diff output
       set_fact:
-        unix_file_list: "{{ unix_file_list_raw.stdout_lines | map('trim') | list }}"
+        comparison_message: >
+          {% if diff_output.rc == 0 %}
+            The JAR files are identical.
+          {% else %}
+            The JAR files differ. Please see the details below:
 
-    - name: Compare file contents between Unix JAR and JFrog
-      set_fact:
-        diff_report: ""
+            {{ diff_output.stdout }}
+          {% endif %}
 
-    - name: Process each file
-      loop: "{{ unix_file_list }}"
-      loop_control:
-        label: "{{ item }}"
-      tasks:
-        - name: Read file content from Unix JAR
-          shell: |
-            unzip -p "{{ unix_jar_path }}" "{{ item }}"
-          register: unix_file_content
-          ignore_errors: yes
-
-        - name: Fetch corresponding file from JFrog
-          uri:
-            url: "{{ jfrog_api_base_url }}/{{ item }}"
-            method: GET
-            user: "{{ jfrog_username }}"
-            password: "{{ jfrog_password }}"
-          register: jfrog_file_response
-          ignore_errors: yes
-
-        - name: Compare file contents in memory
-          set_fact:
-            diff_result: >-
-              {% if unix_file_content.stdout | default('') != (jfrog_file_response.content | b64decode | default('')) %}
-              File: {{ item }} has differences.
-              Unix JAR content:
-              {{ unix_file_content.stdout }}
-
-              JFrog content:
-              {{ jfrog_file_response.content | b64decode }}
-              {% else %}
-              File: {{ item }} has no differences.
-              {% endif %}
-
-        - name: Append diff result to report
-          set_fact:
-            diff_report: >-
-              {{ diff_report }}
-              {{ diff_result }}
-
-    - name: Send email with diff report
+    - name: Send email with comparison result to the recipient
       mail:
         host: "smtp.example.com"  # Replace with your SMTP server
         port: 25
-        to: "{{ email_recipient }}"
+        to: "{{ email_recipient }}"  # Single recipient
         subject: "{{ email_subject }}"
         body: |
           Hi,
 
-          Below is the detailed comparison of JAR file contents:
+          Below is the result of the JAR content comparison:
 
-          {{ diff_report }}
+          {{ comparison_message }}
 
           Regards,
           Automation Team
+
+    - name: Clean up temporary directory
+      file:
+        path: "{{ temp_dir }}"
+        state: absent
