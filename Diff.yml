@@ -1,114 +1,77 @@
----
-- name: Compare contents of two JAR files on Unix using temporary storage
-  hosts: localhost
-  gather_facts: no
-  vars:
-    unix_jar_path_1: "/path/to/unix/jar/sample1.jar"  # Path to first JAR file on Unix
-    unix_jar_path_2: "/path/to/unix/jar/sample2.jar"  # Path to second JAR file on Unix
-    email_recipient: "recipient@example.com"  # Single email recipient
-    email_subject: "JAR Content Comparison Report"  # Email subject
-    temp_dir: "/tmp/jar_comparison"  # Temporary directory to store unzipped files
+#!/usr/bin/env python3
 
-  tasks:
-    - name: Ensure the temporary directory exists
-      file:
-        path: "{{ temp_dir }}"
-        state: directory
-        mode: '0755'
-      register: dir_creation
-      become: true
+import zipfile
+import os
+import difflib
 
-    - name: Unzip first JAR file into temporary directory
-      unarchive:
-        src: "{{ unix_jar_path_1 }}"
-        dest: "{{ temp_dir }}/jar1"
-        remote_src: yes
-      when: dir_creation.changed
 
-    - name: Unzip second JAR file into temporary directory
-      unarchive:
-        src: "{{ unix_jar_path_2 }}"
-        dest: "{{ temp_dir }}/jar2"
-        remote_src: yes
-      when: dir_creation.changed
+def extract_jar_contents(jar_path):
+    """Extracts the content of a JAR file into a dictionary."""
+    jar_contents = {}
+    with zipfile.ZipFile(jar_path, 'r') as jar:
+        for file in jar.namelist():
+            if not file.endswith('/'):  # Ignore directories
+                jar_contents[file] = jar.read(file).decode('utf-8', errors='ignore')
+    return jar_contents
 
-    - name: List files in the first JAR
-      command: find {{ temp_dir }}/jar1 -type f
-      register: jar1_files
 
-    - name: List files in the second JAR
-      command: find {{ temp_dir }}/jar2 -type f
-      register: jar2_files
+def generate_diff_report(contents1, contents2):
+    """Generates a diff report between two dictionaries representing JAR contents."""
+    header = (
+        "+-----------------------------+----------------------+------------------------------------------------------+\n"
+        "| File Name                  | Status               | Content Differences                                  |\n"
+        "+-----------------------------+----------------------+------------------------------------------------------+\n"
+    )
+    report = [header]
 
-    - name: Set the list of all unique files
-      set_fact:
-        all_files: "{{ (jar1_files.stdout_lines + jar2_files.stdout_lines) | unique }}"
+    all_files = set(contents1.keys()) | set(contents2.keys())
 
-    - name: Gather content from first JAR (or Missing if not found)
-      block:
-        - name: Slurp content from first JAR
-          slurp:
-            src: "{{ item }}"
-          register: jar1_content
-          when: item in jar1_files.stdout_lines
-          loop: "{{ all_files }}"
-          loop_control:
-            loop_var: item
+    for file in sorted(all_files):
+        if file in contents1 and file in contents2:
+            if contents1[file] == contents2[file]:
+                status = "Identical"
+                diff_content = "No differences"
+            else:
+                status = "Different"
+                diff = '\n'.join(difflib.unified_diff(
+                    contents1[file].splitlines(),
+                    contents2[file].splitlines(),
+                    lineterm=""
+                ))
+                diff_content = f"--- Differences:\n{diff}"
+        elif file in contents1:
+            status = "Missing in JAR 2"
+            diff_content = f"Content in First JAR:\n{contents1[file]}"
+        else:
+            status = "Missing in JAR 1"
+            diff_content = f"Content in Second JAR:\n{contents2[file]}"
 
-        - name: Set missing content for files not found in JAR 1
-          set_fact:
-            jar1_content_map: "{{ jar1_content_map | default({}) | merge({item: 'Missing'}) }}"
-          when: item not in jar1_files.stdout_lines
-          loop: "{{ all_files }}"
-          loop_control:
-            loop_var: item
+        # Add the formatted row to the report
+        row = (
+            f"| {file:<27} | {status:<20} | {diff_content[:50]:<54} |\n"
+            f"+-----------------------------+----------------------+------------------------------------------------------+\n"
+        )
+        report.append(row)
 
-    - name: Gather content from second JAR (or Missing if not found)
-      block:
-        - name: Slurp content from second JAR
-          slurp:
-            src: "{{ item }}"
-          register: jar2_content
-          when: item in jar2_files.stdout_lines
-          loop: "{{ all_files }}"
-          loop_control:
-            loop_var: item
+    return ''.join(report)
 
-        - name: Set missing content for files not found in JAR 2
-          set_fact:
-            jar2_content_map: "{{ jar2_content_map | default({}) | merge({item: 'Missing'}) }}"
-          when: item not in jar2_files.stdout_lines
-          loop: "{{ all_files }}"
-          loop_control:
-            loop_var: item
 
-    - name: Prepare comparison report in plain text format
-      set_fact:
-        comparison_report: |
-          File Name                    | First JAR Content           | Second JAR Content
-          ------------------------------------------------------------------------------
-          {% for file in all_files %}
-          {{ file | ljust(30) }} | {{ (jar1_content_map[file] if file in jar1_content_map else 'Missing') | ljust(25) }} | {{ (jar2_content_map[file] if file in jar2_content_map else 'Missing') | ljust(25) }}
-          {% endfor %}
+if __name__ == "__main__":
+    import sys
 
-    - name: Send email with comparison result to the recipient
-      mail:
-        host: "smtp.example.com"  # Replace with your SMTP server
-        port: 25
-        to: "{{ email_recipient }}"  # Single recipient
-        subject: "{{ email_subject }}"
-        body: |
-          Hi,
+    if len(sys.argv) != 3:
+        print("Usage: compare_jars.py <path_to_jar1> <path_to_jar2>")
+        sys.exit(1)
 
-          Below is the result of the JAR content comparison:
+    jar1_path = sys.argv[1]
+    jar2_path = sys.argv[2]
 
-          {{ comparison_report }}
+    # Extract JAR contents
+    jar1_contents = extract_jar_contents(jar1_path)
+    jar2_contents = extract_jar_contents(jar2_path)
 
-          Regards,
-          Automation Team
+    # Generate comparison report
+    comparison_report = generate_diff_report(jar1_contents, jar2_contents)
 
-    - name: Clean up temporary directory
-      file:
-        path: "{{ temp_dir }}"
-        state: absent
-      when: dir_creation.changed
+    # Print the report to stdout
+    print(comparison_report)
