@@ -1,37 +1,116 @@
----
-- name: Compare JAR contents and email the report
-  hosts: localhost
-  vars:
-    jar1_path: "/path/to/first.jar"
-    jar2_path: "/path/to/second.jar"
-    python_script: "/path/to/compare_jars.py"
-    smtp_server: "smtp.example.com"
-    smtp_port: 587
-    sender_email: "your_email@example.com"
-    sender_password: "your_password"
-    recipient_email: "recipient@example.com"
-  tasks:
-    - name: Compare JARs using Python script
-      command: >
-        python3 {{ python_script }} {{ jar1_path }} {{ jar2_path }}
-      register: comparison_result
-      failed_when: comparison_result.rc != 0
+#!/usr/bin/env python3
 
-    - name: Send email with the comparison report
-      mail:
-        host: "{{ smtp_server }}"
-        port: "{{ smtp_port }}"
-        username: "{{ sender_email }}"
-        password: "{{ sender_password }}"
-        to: "{{ recipient_email }}"
-        subject: "JAR Content Comparison Report"
-        body: |
-          Hi,
+import zipfile
+import difflib
 
-          Below is the detailed comparison of the JAR contents:
 
-          {{ comparison_result.stdout }}
+def extract_jar_contents(jar_path):
+    """Extracts the content of a JAR file into a dictionary."""
+    jar_contents = {}
+    with zipfile.ZipFile(jar_path, 'r') as jar:
+        for file in jar.namelist():
+            if not file.endswith('/'):  # Ignore directories
+                jar_contents[file] = jar.read(file).decode('utf-8', errors='ignore')
+    return jar_contents
 
-          Regards,
-          Automation Team
-      delegate_to: localhost
+
+def generate_html_report(contents1, contents2):
+    """Generates an HTML report between two dictionaries representing JAR contents."""
+    html_content = '''
+    <html>
+    <head>
+        <style>
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            th, td {
+                padding: 8px 12px;
+                border: 2px solid black;
+                text-align: left;
+            }
+            th {
+                background-color: #f2f2f2;
+            }
+            hr {
+                border: 2px solid #000;
+                margin-top: 20px;
+                margin-bottom: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <h2>JAR File Comparison Report</h2>
+        <hr>
+        <table>
+            <thead>
+                <tr>
+                    <th>File Name</th>
+                    <th>Status</th>
+                    <th>Content Differences</th>
+                </tr>
+            </thead>
+            <tbody>
+    '''
+
+    all_files = set(contents1.keys()) | set(contents2.keys())
+
+    for file in sorted(all_files):
+        if file in contents1 and file in contents2:
+            if contents1[file] == contents2[file]:
+                status = "Identical"
+                diff_content = "No differences"
+            else:
+                status = "Different"
+                diff = '\n'.join(difflib.unified_diff(
+                    contents1[file].splitlines(),
+                    contents2[file].splitlines(),
+                    lineterm=""
+                ))
+                diff_content = f"--- Differences:\n<pre>{diff}</pre>"
+        elif file in contents1:
+            status = "Missing in JAR 2"
+            diff_content = f"Content in First JAR:\n<pre>{contents1[file]}</pre>"
+        else:
+            status = "Missing in JAR 1"
+            diff_content = f"Content in Second JAR:\n<pre>{contents2[file]}</pre>"
+
+        # Add the row for the file comparison
+        html_content += f'''
+                <tr>
+                    <td>{file}</td>
+                    <td>{status}</td>
+                    <td>{diff_content}</td>
+                </tr>
+        '''
+
+    html_content += '''
+            </tbody>
+        </table>
+        <hr>
+    </body>
+    </html>
+    '''
+
+    return html_content
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) != 3:
+        print("Usage: compare_jars.py <path_to_jar1> <path_to_jar2>")
+        sys.exit(1)
+
+    jar1_path = sys.argv[1]
+    jar2_path = sys.argv[2]
+
+    # Extract JAR contents
+    jar1_contents = extract_jar_contents(jar1_path)
+    jar2_contents = extract_jar_contents(jar2_path)
+
+    # Generate HTML report
+    html_report = generate_html_report(jar1_contents, jar2_contents)
+
+    # Print the report (this will be captured by Ansible)
+    print(html_report)
