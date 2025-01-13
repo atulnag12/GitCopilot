@@ -44,31 +44,51 @@
       set_fact:
         all_files: "{{ (jar1_files.stdout_lines + jar2_files.stdout_lines) | unique }}"
 
-    - name: Gather file contents for comparison
+    - name: Gather content from first JAR (or Missing if not found)
       block:
-        - name: Read file content from first JAR
-          set_fact:
-            jar1_content: "{{ lookup('file', item) | default('Missing') }}"
-          loop: "{{ all_files }}"
-          loop_control:
-            loop_var: item
+        - name: Slurp content from first JAR
+          slurp:
+            src: "{{ item }}"
+          register: jar1_content
           when: item in jar1_files.stdout_lines
-
-        - name: Read file content from second JAR
-          set_fact:
-            jar2_content: "{{ lookup('file', item) | default('Missing') }}"
           loop: "{{ all_files }}"
           loop_control:
             loop_var: item
-          when: item in jar2_files.stdout_lines
 
-    - name: Prepare comparison result
+        - name: Set missing content for files not found in JAR 1
+          set_fact:
+            jar1_content_map: "{{ jar1_content_map | default({}) | merge({item: 'Missing'}) }}"
+          when: item not in jar1_files.stdout_lines
+          loop: "{{ all_files }}"
+          loop_control:
+            loop_var: item
+
+    - name: Gather content from second JAR (or Missing if not found)
+      block:
+        - name: Slurp content from second JAR
+          slurp:
+            src: "{{ item }}"
+          register: jar2_content
+          when: item in jar2_files.stdout_lines
+          loop: "{{ all_files }}"
+          loop_control:
+            loop_var: item
+
+        - name: Set missing content for files not found in JAR 2
+          set_fact:
+            jar2_content_map: "{{ jar2_content_map | default({}) | merge({item: 'Missing'}) }}"
+          when: item not in jar2_files.stdout_lines
+          loop: "{{ all_files }}"
+          loop_control:
+            loop_var: item
+
+    - name: Prepare comparison report in plain text format
       set_fact:
         comparison_report: |
           File Name                    | First JAR Content           | Second JAR Content
           ------------------------------------------------------------------------------
           {% for file in all_files %}
-          {{ file | ljust(30) }} | {{ (jar1_content[file] if file in jar1_files.stdout_lines else 'Missing') | ljust(25) }} | {{ (jar2_content[file] if file in jar2_files.stdout_lines else 'Missing') | ljust(25) }}
+          {{ file | ljust(30) }} | {{ (jar1_content_map[file] if file in jar1_content_map else 'Missing') | ljust(25) }} | {{ (jar2_content_map[file] if file in jar2_content_map else 'Missing') | ljust(25) }}
           {% endfor %}
 
     - name: Send email with comparison result to the recipient
