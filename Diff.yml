@@ -1,27 +1,75 @@
-    - name: Set result message based on diff output
+---
+- name: Compare contents of two JAR files on Unix using temporary storage
+  hosts: localhost
+  gather_facts: no
+  vars:
+    unix_jar_path_1: "/path/to/unix/jar/sample1.jar"  # Path to first JAR file on Unix
+    unix_jar_path_2: "/path/to/unix/jar/sample2.jar"  # Path to second JAR file on Unix
+    email_recipient: "recipient@example.com"  # Single email recipient
+    email_subject: "JAR Content Comparison Report"  # Email subject
+    temp_dir: "/tmp/jar_comparison"  # Temporary directory to store unzipped files
+
+  tasks:
+    - name: Ensure the temporary directory exists
+      file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: '0755'
+      register: dir_creation
+      become: true
+
+    - name: Unzip first JAR file into temporary directory
+      unarchive:
+        src: "{{ unix_jar_path_1 }}"
+        dest: "{{ temp_dir }}/jar1"
+        remote_src: yes
+      when: dir_creation.changed
+
+    - name: Unzip second JAR file into temporary directory
+      unarchive:
+        src: "{{ unix_jar_path_2 }}"
+        dest: "{{ temp_dir }}/jar2"
+        remote_src: yes
+      when: dir_creation.changed
+
+    - name: List files in the first JAR
+      command: find {{ temp_dir }}/jar1 -type f
+      register: jar1_files
+
+    - name: List files in the second JAR
+      command: find {{ temp_dir }}/jar2 -type f
+      register: jar2_files
+
+    - name: Set the list of all unique files
       set_fact:
-        comparison_message: >
-          {% if diff_output.rc == 0 %}
-            <h2>The JAR files are identical.</h2>
-          {% else %}
-            <h2>The JAR files differ. Please see the details below:</h2>
-            {% if diff_output.stdout | length > 0 %}
-              <table border="1" cellpadding="5" cellspacing="0">
-                <tr>
-                  <th style="background-color:#f2f2f2;">File Name</th>
-                  <th style="background-color:#f2f2f2;">Differences</th>
-                </tr>
-                {% for line in diff_output.stdout.splitlines() %}
-                  <tr>
-                    <td>{{ line.split(':')[0] }}</td>
-                    <td style="color:red;">{{ line.split(':')[1] }}</td>
-                  </tr>
-                {% endfor %}
-              </table>
-            {% else %}
-              <p>No differences found between the JAR files.</p>
-            {% endif %}
-          {% endif %}
+        all_files: "{{ (jar1_files.stdout_lines + jar2_files.stdout_lines) | unique }}"
+
+    - name: Gather file contents for comparison
+      block:
+        - name: Read file content from first JAR
+          set_fact:
+            jar1_content: "{{ lookup('file', item) | default('Missing') }}"
+          loop: "{{ all_files }}"
+          loop_control:
+            loop_var: item
+          when: item in jar1_files.stdout_lines
+
+        - name: Read file content from second JAR
+          set_fact:
+            jar2_content: "{{ lookup('file', item) | default('Missing') }}"
+          loop: "{{ all_files }}"
+          loop_control:
+            loop_var: item
+          when: item in jar2_files.stdout_lines
+
+    - name: Prepare comparison result
+      set_fact:
+        comparison_report: |
+          File Name                    | First JAR Content           | Second JAR Content
+          ------------------------------------------------------------------------------
+          {% for file in all_files %}
+          {{ file | ljust(30) }} | {{ (jar1_content[file] if file in jar1_files.stdout_lines else 'Missing') | ljust(25) }} | {{ (jar2_content[file] if file in jar2_files.stdout_lines else 'Missing') | ljust(25) }}
+          {% endfor %}
 
     - name: Send email with comparison result to the recipient
       mail:
@@ -30,15 +78,17 @@
         to: "{{ email_recipient }}"  # Single recipient
         subject: "{{ email_subject }}"
         body: |
-          <html>
-          <body>
-            <h3>Hi,</h3>
-            <p>Below is the result of the JAR content comparison:</p>
-            {{ comparison_message }}
-            <br/>
-            <br/>
-            <p>Regards,</p>
-            <p>Automation Team</p>
-          </body>
-          </html>
-        subtype: html
+          Hi,
+
+          Below is the result of the JAR content comparison:
+
+          {{ comparison_report }}
+
+          Regards,
+          Automation Team
+
+    - name: Clean up temporary directory
+      file:
+        path: "{{ temp_dir }}"
+        state: absent
+      when: dir_creation.changed
