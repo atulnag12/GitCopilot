@@ -15,7 +15,7 @@ def extract_jar_contents(jar_path):
 
 
 def generate_html_report(contents1, contents2):
-    """Generates an HTML report between two dictionaries representing JAR contents."""
+    """Generates an HTML report for only the files with 'Different' status."""
     html_content = '''
     <html>
     <head>
@@ -57,10 +57,7 @@ def generate_html_report(contents1, contents2):
 
     for file in sorted(all_files):
         if file in contents1 and file in contents2:
-            if contents1[file] == contents2[file]:
-                status = "Identical"
-                diff_content = "No differences"
-            else:
+            if contents1[file] != contents2[file]:  # Only show different files
                 status = "Different"
                 diff = '\n'.join(difflib.unified_diff(
                     contents1[file].splitlines(),
@@ -68,21 +65,13 @@ def generate_html_report(contents1, contents2):
                     lineterm=""
                 ))
                 diff_content = f"--- Differences:\n<pre>{diff}</pre>"
-        elif file in contents1:
-            status = "Missing in JAR 2"
-            diff_content = f"Content in First JAR:\n<pre>{contents1[file]}</pre>"
-        else:
-            status = "Missing in JAR 1"
-            diff_content = f"Content in Second JAR:\n<pre>{contents2[file]}</pre>"
-
-        # Add the row for the file comparison
-        html_content += f'''
+                html_content += f'''
                 <tr>
                     <td>{file}</td>
                     <td>{status}</td>
                     <td>{diff_content}</td>
                 </tr>
-        '''
+                '''
 
     html_content += '''
             </tbody>
