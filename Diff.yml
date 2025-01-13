@@ -1,66 +1,20 @@
----
-- name: Compare contents of two JAR files on Unix using temporary storage
-  hosts: localhost
-  gather_facts: no
-  vars:
-    unix_jar_path_1: "/path/to/unix/jar/sample1.jar"  # Path to first JAR file on Unix
-    unix_jar_path_2: "/path/to/unix/jar/sample2.jar"  # Path to second JAR file on Unix
-    email_recipient: "recipient@example.com"  # Single email recipient
-    email_subject: "JAR Content Comparison Report"  # Email subject
-    temp_dir: "/tmp/jar_comparison"  # Temporary directory to store unzipped files
-
-  tasks:
-    - name: Create temporary directory for unzipped contents
-      file:
-        path: "{{ temp_dir }}"
-        state: directory
-        mode: '0755'
-
-    - name: Unzip first JAR file into temporary directory
-      unarchive:
-        src: "{{ unix_jar_path_1 }}"
-        dest: "{{ temp_dir }}/jar1"
-        remote_src: yes
-
-    - name: Unzip second JAR file into temporary directory
-      unarchive:
-        src: "{{ unix_jar_path_2 }}"
-        dest: "{{ temp_dir }}/jar2"
-        remote_src: yes
-
-    - name: Compare contents of both JARs (files and their content)
-      command: diff -r {{ temp_dir }}/jar1 {{ temp_dir }}/jar2
-      register: diff_output
-      ignore_errors: yes
-
     - name: Set result message based on diff output
       set_fact:
         comparison_message: >
           {% if diff_output.rc == 0 %}
-            The JAR files are identical.
+            <h2>The JAR files are identical.</h2>
           {% else %}
-            The JAR files differ. Please see the details below:
-
-            {{ diff_output.stdout }}
+            <h2>The JAR files differ. Please see the details below:</h2>
+            <table border="1" cellpadding="5" cellspacing="0">
+              <tr>
+                <th style="background-color:#f2f2f2;">File Name</th>
+                <th style="background-color:#f2f2f2;">Differences</th>
+              </tr>
+              {% for line in diff_output.stdout.splitlines() %}
+                <tr>
+                  <td>{{ line.split(':')[0] }}</td>
+                  <td style="color:red;">{{ line.split(':')[1] }}</td>
+                </tr>
+              {% endfor %}
+            </table>
           {% endif %}
-
-    - name: Send email with comparison result to the recipient
-      mail:
-        host: "smtp.example.com"  # Replace with your SMTP server
-        port: 25
-        to: "{{ email_recipient }}"  # Single recipient
-        subject: "{{ email_subject }}"
-        body: |
-          Hi,
-
-          Below is the result of the JAR content comparison:
-
-          {{ comparison_message }}
-
-          Regards,
-          Automation Team
-
-    - name: Clean up temporary directory
-      file:
-        path: "{{ temp_dir }}"
-        state: absent
