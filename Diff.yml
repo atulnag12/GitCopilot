@@ -1,5 +1,5 @@
 ---
-- name: Compare JARs without downloading from JFrog
+- name: Compare JARs without writing any files
   hosts: localhost
   gather_facts: no
   vars:
@@ -7,11 +7,8 @@
     jfrog_api_url: "https://jfrog.example.com/artifactory/api/storage/path/to/sample.jar"  # JFrog API URL
     jfrog_username: "your_username"  # JFrog username
     jfrog_password: "your_password"  # JFrog password
-    jfrog_file_list: "/tmp/jfrog_jar_file_list.txt"  # Temp file to store JFrog file list
-    unix_file_list: "/tmp/unix_jar_file_list.txt"  # Temp file to store Unix JAR file list
-    diff_report: "/tmp/jar_diff_report.txt"  # Path to save the diff report
     email_recipient: "recipient@example.com"  # Email recipient
-    email_subject: "JAR Diff Report Without Download"  # Email subject
+    email_subject: "JAR Diff Report Without Files"  # Email subject
   tasks:
     - name: Fetch file list from JFrog
       uri:
@@ -23,30 +20,28 @@
           Accept: application/json
       register: jfrog_response
 
-    - name: Parse JFrog response and save file list
-      copy:
-        content: |
-          {% for item in jfrog_response.json.children %}
-          {{ item.uri }}
-          {% endfor %}
-        dest: "{{ jfrog_file_list }}"
+    - name: Parse JFrog file list
+      set_fact:
+        jfrog_file_list: >-
+          {{ jfrog_response.json.children | map(attribute='uri') | map('trim') | list }}
 
     - name: Extract file list from Unix JAR
       shell: |
-        unzip -l "{{ unix_jar_path }}" | awk '{print $NF}' | tail -n +4 | head -n -2 > "{{ unix_file_list }}"
+        unzip -l "{{ unix_jar_path }}" | awk '{print $NF}' | tail -n +4 | head -n -2
+      register: unix_file_list_raw
 
-    - name: Compare file lists and generate diff report
-      shell: |
-        diff "{{ unix_file_list }}" "{{ jfrog_file_list }}" > "{{ diff_report }}"
-      register: diff_result
-      failed_when: diff_result.rc not in [0, 1]
+    - name: Parse Unix JAR file list
+      set_fact:
+        unix_file_list: "{{ unix_file_list_raw.stdout_lines | map('trim') | list }}"
 
-    - name: Check if the diff report is empty
-      debug:
-        msg: "No differences found between the JAR files."
-      when: diff_result.rc == 0
+    - name: Compare file lists in memory
+      set_fact:
+        diff_output: >-
+          Differences Found:
+          {{ (unix_file_list | difference(jfrog_file_list)) | join('\n') }}
+          {{ (jfrog_file_list | difference(unix_file_list)) | join('\n') }}
 
-    - name: Send email with diff report
+    - name: Send email with diff output
       mail:
         host: "smtp.example.com"  # Replace with your SMTP server
         port: 25
@@ -55,10 +50,15 @@
         body: |
           Hi,
 
-          Please find the attached diff report for the JAR comparison without downloading from JFrog.
+          Below are the differences found during the JAR comparison:
+
+          {{ diff_output }}
 
           Regards,
           Automation Team
-        attach:
-          - "{{ diff_report }}"
-      when: diff_result.rc != 0
+      when: diff_output | length > 0
+
+    - name: Print message if no differences are found
+      debug:
+        msg: "No differences found between the JAR files."
+      when: diff_output is not defined or diff_output | length == 0
