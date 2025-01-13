@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import zipfile
-import difflib
 
 
 def extract_jar_contents(jar_path):
@@ -15,7 +14,7 @@ def extract_jar_contents(jar_path):
 
 
 def generate_html_report(contents1, contents2):
-    """Generates an HTML report for only the files with 'Different' status."""
+    """Generates an HTML report for only the files with 'Different' or 'Missing' status."""
     html_content = '''
     <html>
     <head>
@@ -47,7 +46,6 @@ def generate_html_report(contents1, contents2):
                 <tr>
                     <th>File Name</th>
                     <th>Status</th>
-                    <th>Content Differences</th>
                 </tr>
             </thead>
             <tbody>
@@ -57,21 +55,32 @@ def generate_html_report(contents1, contents2):
 
     for file in sorted(all_files):
         if file in contents1 and file in contents2:
-            if contents1[file] != contents2[file]:  # Only show different files
+            if contents1[file] != contents2[file]:  # Show only files that are different
                 status = "Different"
-                diff = '\n'.join(difflib.unified_diff(
-                    contents1[file].splitlines(),
-                    contents2[file].splitlines(),
-                    lineterm=""
-                ))
-                diff_content = f"--- Differences:\n<pre>{diff}</pre>"
                 html_content += f'''
                 <tr>
                     <td>{file}</td>
                     <td>{status}</td>
-                    <td>{diff_content}</td>
                 </tr>
                 '''
+        elif file in contents1 and file not in contents2:
+            # File is missing in JAR 2
+            status = "Missing in JAR 2"
+            html_content += f'''
+            <tr>
+                <td>{file}</td>
+                <td>{status}</td>
+            </tr>
+            '''
+        elif file not in contents1 and file in contents2:
+            # File is missing in JAR 1
+            status = "Missing in JAR 1"
+            html_content += f'''
+            <tr>
+                <td>{file}</td>
+                <td>{status}</td>
+            </tr>
+            '''
 
     html_content += '''
             </tbody>
