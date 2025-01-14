@@ -1,114 +1,35 @@
-#!/usr/bin/env python3
+---
+- name: Run Python script inline without temporary file
+  hosts: target_server
+  become: yes
+  vars:
+    path_of_the_shell_script: "/path/to/your/shell_script.sh"
+    environment: ""
+    type_of_command: ""
 
-import zipfile
+  tasks:
+    - name: Execute inline Python script with parameters
+      ansible.builtin.shell: |
+        python3 - << 'EOF'
+        import subprocess
+        import sys
 
+        def run_shell_script(shell_script_path, env=None, command_type=None):
+            try:
+                command = ['/bin/bash', shell_script_path]
+                if env:
+                    command += ['-E', env]
+                if command_type:
+                    command += ['-c', command_type]
 
-def extract_jar_contents(jar_path):
-    """Extracts the content of a JAR file into a dictionary."""
-    jar_contents = {}
-    with zipfile.ZipFile(jar_path, 'r') as jar:
-        for file in jar.namelist():
-            if not file.endswith('/'):  # Ignore directories
-                jar_contents[file] = jar.read(file).decode('utf-8', errors='ignore')
-    return jar_contents
+                subprocess.run(command, check=True)
+                print("Shell script executed successfully.")
+            except subprocess.CalledProcessError as e:
+                print(f"Error executing shell script: {e}")
 
-
-def generate_html_report(contents1, contents2):
-    """Generates an HTML report for only the files with 'Different' or 'Missing' status."""
-    html_content = '''
-    <html>
-    <head>
-        <style>
-            table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            th, td {
-                padding: 8px 12px;
-                border: 2px solid black;
-                text-align: left;
-            }
-            th {
-                background-color: #f2f2f2;
-            }
-            hr {
-                border: 2px solid #000;
-                margin-top: 20px;
-                margin-bottom: 20px;
-            }
-        </style>
-    </head>
-    <body>
-        <h2>JAR File Comparison Report</h2>
-        <hr>
-        <table>
-            <thead>
-                <tr>
-                    <th>File Name</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-    '''
-
-    all_files = set(contents1.keys()) | set(contents2.keys())
-
-    for file in sorted(all_files):
-        if file in contents1 and file in contents2:
-            if contents1[file] != contents2[file]:  # Show only files that are different
-                status = "Different"
-                html_content += f'''
-                <tr>
-                    <td>{file}</td>
-                    <td>{status}</td>
-                </tr>
-                '''
-        elif file in contents1 and file not in contents2:
-            # File is missing in JAR 2
-            status = "Missing in JAR 2"
-            html_content += f'''
-            <tr>
-                <td>{file}</td>
-                <td>{status}</td>
-            </tr>
-            '''
-        elif file not in contents1 and file in contents2:
-            # File is missing in JAR 1
-            status = "Missing in JAR 1"
-            html_content += f'''
-            <tr>
-                <td>{file}</td>
-                <td>{status}</td>
-            </tr>
-            '''
-
-    html_content += '''
-            </tbody>
-        </table>
-        <hr>
-    </body>
-    </html>
-    '''
-
-    return html_content
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) != 3:
-        print("Usage: compare_jars.py <path_to_jar1> <path_to_jar2>")
-        sys.exit(1)
-
-    jar1_path = sys.argv[1]
-    jar2_path = sys.argv[2]
-
-    # Extract JAR contents
-    jar1_contents = extract_jar_contents(jar1_path)
-    jar2_contents = extract_jar_contents(jar2_path)
-
-    # Generate HTML report
-    html_report = generate_html_report(jar1_contents, jar2_contents)
-
-    # Print the report (this will be captured by Ansible)
-    print(html_report)
+        if __name__ == "__main__":
+            shell_script_path = "{{ path_of_the_shell_script }}"
+            env = "{{ environment }}"
+            command_type = "{{ type_of_command }}"
+            run_shell_script(shell_script_path, env or None, command_type or None)
+        EOF
