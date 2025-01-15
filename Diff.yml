@@ -1,35 +1,43 @@
----
-- name: Run Python script inline without temporary file
-  hosts: target_server
-  become: yes
-  vars:
-    path_of_the_shell_script: "/path/to/your/shell_script.sh"
-    environment: ""
-    type_of_command: ""
+import subprocess
+import sys
 
-  tasks:
-    - name: Execute inline Python script with parameters
-      ansible.builtin.shell: |
-        python3 - << 'EOF'
-        import subprocess
-        import sys
+def execute_shell_script(shell_script_path, para1=None, para2=None):
+    """
+    Executes a shell script with optional parameters.
 
-        def run_shell_script(shell_script_path, env=None, command_type=None):
-            try:
-                command = ['/bin/bash', shell_script_path]
-                if env:
-                    command += ['-E', env]
-                if command_type:
-                    command += ['-c', command_type]
+    :param shell_script_path: Path to the shell script to execute
+    :param para1: Optional parameter 1
+    :param para2: Optional parameter 2
+    """
+    try:
+        # Build the command to execute
+        command = [shell_script_path]
+        if para1:
+            command.append(para1)
+        if para2:
+            command.append(para2)
 
-                subprocess.run(command, check=True)
-                print("Shell script executed successfully.")
-            except subprocess.CalledProcessError as e:
-                print(f"Error executing shell script: {e}")
+        # Execute the command
+        result = subprocess.run(command, check=True, text=True, capture_output=True)
 
-        if __name__ == "__main__":
-            shell_script_path = "{{ path_of_the_shell_script }}"
-            env = "{{ environment }}"
-            command_type = "{{ type_of_command }}"
-            run_shell_script(shell_script_path, env or None, command_type or None)
-        EOF
+        # Print the output
+        print("Output:", result.stdout)
+        if result.stderr:
+            print("Errors:", result.stderr)
+
+    except FileNotFoundError:
+        print(f"Error: The script at path '{shell_script_path}' was not found.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error: The script returned a non-zero exit code.\n{e.stderr}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python script.py <shell_script_path> [para1] [para2]")
+        sys.exit(1)
+
+    script_path = sys.argv[1]
+    parameter1 = sys.argv[2] if len(sys.argv) > 2 else None
+    parameter2 = sys.argv[3] if len(sys.argv) > 3 else None
+    execute_shell_script(script_path, parameter1, parameter2)
