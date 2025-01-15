@@ -1,43 +1,17 @@
-import subprocess
-import sys
+---
+- name: Execute Python script with parameters
+  hosts: localhost
+  vars:
+    shell_script_path: "/path/to/your/script.py"  # Modify with actual script path
+    para1: "value1"  # Modify with the actual parameter value
+    para2: "value2"  # Modify with the actual parameter value
+  
+  tasks:
+    - name: Run Python script with parameters
+      command: >
+        python3 {{ shell_script_path }} {{ para1 }} {{ para2 }}
+      register: result
 
-def execute_shell_script(shell_script_path, para1=None, para2=None):
-    """
-    Executes a shell script with optional parameters.
-
-    :param shell_script_path: Path to the shell script to execute
-    :param para1: Optional parameter 1
-    :param para2: Optional parameter 2
-    """
-    try:
-        # Build the command to execute
-        command = [shell_script_path]
-        if para1:
-            command.append(para1)
-        if para2:
-            command.append(para2)
-
-        # Execute the command
-        result = subprocess.run(command, check=True, text=True, capture_output=True)
-
-        # Print the output
-        print("Output:", result.stdout)
-        if result.stderr:
-            print("Errors:", result.stderr)
-
-    except FileNotFoundError:
-        print(f"Error: The script at path '{shell_script_path}' was not found.")
-    except subprocess.CalledProcessError as e:
-        print(f"Error: The script returned a non-zero exit code.\n{e.stderr}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python script.py <shell_script_path> [para1] [para2]")
-        sys.exit(1)
-
-    script_path = sys.argv[1]
-    parameter1 = sys.argv[2] if len(sys.argv) > 2 else None
-    parameter2 = sys.argv[3] if len(sys.argv) > 3 else None
-    execute_shell_script(script_path, parameter1, parameter2)
+    - name: Show command output
+      debug:
+        msg: "{{ result.stdout }}"
