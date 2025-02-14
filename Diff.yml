@@ -1,1 +1,1 @@
-Hello
+Implement monitoring for service states based on various parameters using OpenTelemetry. The solution will collect, process, and analyze data on service health and performance metrics in real-time, enabling proactive management and alerting. Key parameters include latency, error rates, resource usage, and other relevant metrics that contribute to the overall service health. This will help in tracking and maintaining optimal service performance and availability.
