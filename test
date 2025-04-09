@@ -1,0 +1,92 @@
+import java.io.*;
+import java.net.*;
+import java.util.*;
+import java.util.concurrent.*;
+import com.fasterxml.jackson.databind.*;
+
+public class JsonUrlFetcherAndPoster {
+
+    private static final ExecutorService executorService = Executors.newFixedThreadPool(10);
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    private static final String FETCH_URL = "https://your-server.com/data.json";
+    private static final String TARGET_API_URL = "https://www.api_url.com/7828";
+
+    public static void main(String[] args) throws InterruptedException {
+        while (true) {
+            try {
+                // 1. Fetch JSON List from FETCH_URL
+                String jsonInput = fetchJsonFromUrl(FETCH_URL);
+
+                // 2. Convert to List of JSON objects
+                List<Map<String, Object>> requests = objectMapper.readValue(jsonInput, List.class);
+
+                // 3. Multithreaded processing
+                List<Future<String>> futures = new ArrayList<>();
+                for (Map<String, Object> request : requests) {
+                    futures.add(executorService.submit(() -> sendJsonToApi(request)));
+                }
+
+                // 4. Collect responses
+                for (Future<String> future : futures) {
+                    System.out.println("API Response: " + future.get());
+                }
+
+            } catch (Exception e) {
+                System.err.println("Error in fetch or processing: " + e.getMessage());
+            }
+
+            Thread.sleep(5000); // Wait 5 seconds before fetching next batch
+        }
+    }
+
+    private static String fetchJsonFromUrl(String urlStr) throws IOException {
+        StringBuilder result = new StringBuilder();
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+
+        try (BufferedReader rd = new BufferedReader(
+                new InputStreamReader(conn.getInputStream()))) {
+            String line;
+            while ((line = rd.readLine()) != null) {
+                result.append(line);
+            }
+        }
+
+        return result.toString();
+    }
+
+    private static String sendJsonToApi(Map<String, Object> jsonMap) {
+        try {
+            String jsonBody = objectMapper.writeValueAsString(jsonMap);
+            URL url = new URL(TARGET_API_URL);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(jsonBody.getBytes());
+                os.flush();
+            }
+
+            int responseCode = conn.getResponseCode();
+            StringBuilder response = new StringBuilder();
+
+            try (BufferedReader br = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream()))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    response.append(line);
+                }
+            }
+
+            return "Success [" + jsonMap.get("id") + "]: " + response.toString();
+
+        } catch (Exception e) {
+            return "Failed [" + jsonMap.get("id") + "]: " + e.getMessage();
+        }
+    }
+}
